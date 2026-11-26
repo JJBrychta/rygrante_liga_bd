@@ -1,0 +1,25 @@
+# ==============================================================================
+# rygrante_liga_bd — Windows shortcuts
+#
+# Usage:  make -f MakefileW <target>      (e.g. make -f MakefileW ci-fast)
+#         make -f MakefileW logs s=airflow-webserver
+#
+# Same targets as Makefile / MakefileL. Every target runs make.ps1, so all the
+# logic lives in PowerShell (no bash, awk or Git Bash needed).
+#
+# Needs GNU make on Windows, once:  winget install ezwinports.make
+# No make? Run the script directly:  .\make.ps1 <target>
+# ==============================================================================
+
+.DEFAULT_GOAL := help
+
+# Override for testing, e.g. PS="pwsh -NoProfile -File make.ps1"
+PS ?= powershell -NoProfile -ExecutionPolicy Bypass -File make.ps1
+
+TARGETS := help ci ci-fast lint fix test test-host gitleaks semgrep trivy \
+           up build down restart ps logs setup data first-run doctor
+
+.PHONY: $(TARGETS)
+
+$(TARGETS):
+	@$(PS) $@ $(if $(s),-Service $(s))

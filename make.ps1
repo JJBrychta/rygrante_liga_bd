@@ -5,7 +5,8 @@
 #         .\make.ps1 help
 #         .\make.ps1 logs -Service airflow-webserver
 #
-# Same targets as the Makefile, no GNU make / Git Bash / WSL shell needed.
+# Same targets as the Makefile. Called by MakefileW (make -f MakefileW <target>),
+# or run directly without GNU make / Git Bash / WSL.
 # Requires: Docker Desktop (running), uv, PowerShell 5.1+ or 7+.
 # If scripts are blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 # ==============================================================================
@@ -67,7 +68,7 @@ $Targets = [ordered]@{
 }
 
 function Show-Help {
-    Write-Host "`nUsage: .\make.ps1 <target>`n"
+    Write-Host "`nUsage: make -f MakefileW <target>   (or without make: .\make.ps1 <target>)`n"
     $groups = @{ "ci" = "CI (mirrors .github/workflows/ci.yml)"; "up" = "Docker stack"; "setup" = "Windows setup" }
     foreach ($name in $Targets.Keys) {
         if ($groups.ContainsKey($name)) { Write-Host "`n$($groups[$name])" -ForegroundColor White }
