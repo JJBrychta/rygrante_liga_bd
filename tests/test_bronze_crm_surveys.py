@@ -44,8 +44,12 @@ SURVEYS = [
         "overall_comment": "Great team",
         "answers": [
             {"question_id": "Q01", "dimension": "enps", "numeric_score": 9, "written_answer": "ok"},
-            {"question_id": "Q02", "dimension": "work_life_balance", "numeric_score": 4,
-             "written_answer": None},
+            {
+                "question_id": "Q02",
+                "dimension": "work_life_balance",
+                "numeric_score": 4,
+                "written_answer": None,
+            },
         ],
     },
     # Exact duplicate + out-of-range score: Bronze must keep both untouched (Silver handles them).
@@ -94,9 +98,7 @@ def test_crm_events_raw_payload_metadata_and_idempotency(spark, tmp_path: Path) 
     counts = {r["_batch_date"]: r["count"] for r in crm.groupBy("_batch_date").count().collect()}
     assert counts == {date(2026, 1, 1): 3, date(2026, 1, 2): 1}
 
-    assert {"event_id", "client_id", "event_type", "timestamp", "payload_raw"}.issubset(
-        crm.columns
-    )
+    assert {"event_id", "client_id", "event_type", "timestamp", "payload_raw"}.issubset(crm.columns)
     assert all(f.dataType.simpleString() == "string" for f in crm.schema.fields[:5])
     assert crm.filter("_ingested_at IS NULL OR _source_file IS NULL").count() == 0
 
