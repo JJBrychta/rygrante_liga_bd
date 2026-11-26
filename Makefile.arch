@@ -1,0 +1,78 @@
+# ==============================================================================
+# rygrante_liga_bd — Arch Linux shortcuts
+#
+# Usage:  make -f Makefile.arch <target>      (e.g. make -f Makefile.arch setup)
+#
+# Includes every target from the shared Makefile (ci, lint, test, up, down, ...)
+# and adds Arch-specific setup. Docker Engine on Linux runs containers as other
+# users (Spark = UID 185, Airflow = UID 50000), so bind-mounted folders must be
+# created and made writable before the first `docker compose up`.
+#
+# Tip: alias it once in your shell:  alias amake='make -f Makefile.arch'
+# ==============================================================================
+
+include Makefile
+
+.DEFAULT_GOAL := help
+
+LINUX_DIRS := data/landing lakehouse/spark-events logs
+
+.PHONY: install setup dirs data first-run doctor java
+
+##@ Arch Linux
+
+install: ## Install system packages with pacman, enable Docker, join docker group (sudo)
+	sudo pacman -Syu --needed git docker docker-compose docker-buildx uv
+	sudo systemctl enable --now docker
+	sudo usermod -aG docker "$$USER"
+	@echo -e "\033[33m! Log out and back in so the docker group applies. Reboot if the kernel was upgraded.\033[0m"
+
+setup: dirs ## Create .env (never overwrites), fix folder permissions, install Python 3.11 + deps
+	@if [ -f .env ]; then echo ".env exists, keeping it"; else cp .env.example .env && echo -e "\033[33m! Created .env: fill in the R2_* values\033[0m"; fi
+	uv python install 3.11
+	uv sync --frozen --dev
+	@echo -e "\033[32m✔ setup done\033[0m"
+
+dirs: ## Create bind-mount folders writable for the Spark and Airflow containers
+	mkdir -p $(LINUX_DIRS)
+	chmod 777 data lakehouse lakehouse/spark-events logs dags
+	chmod 755 data/landing
+
+data: ## Download + verify the dataset, then make it readable for Spark
+	./scripts/download_data.sh
+	chmod 755 data/landing
+	@echo -e "\033[32m✔ data ready\033[0m"
+
+first-run: setup data build test ## Fresh clone to working stack: setup, data, build, test
+
+java: ## Install Java 17 (only needed for `test-host`)
+	sudo pacman -S --needed jdk17-openjdk
+
+doctor: ## Diagnose common Arch problems (service, group, buildx, kernel, folders, .env)
+	@ok=1; \
+	running=$$(uname -r); \
+	if ls /usr/lib/modules/"$$running" >/dev/null 2>&1; then echo "✔ kernel $$running modules present"; \
+	else echo "✘ kernel upgraded but not rebooted (running $$running): reboot"; ok=0; fi; \
+	if systemctl is-active --quiet docker; then echo "✔ docker service active"; \
+	else echo "✘ docker not running: sudo systemctl start docker"; ok=0; fi; \
+	if id -nG | grep -qw docker; then echo "✔ user in docker group"; \
+	else echo "✘ not in docker group: make -f Makefile.arch install, then log out/in"; ok=0; fi; \
+	if docker buildx version >/dev/null 2>&1; then echo "✔ docker buildx installed"; \
+	else echo "✘ buildx missing: sudo pacman -S docker-buildx"; ok=0; fi; \
+	if docker compose version >/dev/null 2>&1; then echo "✔ docker compose v2"; \
+	else echo "✘ compose missing: sudo pacman -S docker-compose"; ok=0; fi; \
+	if command -v uv >/dev/null; then echo "✔ uv installed"; \
+	else echo "✘ uv missing: sudo pacman -S uv"; ok=0; fi; \
+	for d in data lakehouse logs; do \
+		if [ -d "$$d" ] && [ "$$(stat -c %U "$$d")" != root ] && [ -w "$$d" ]; then echo "✔ $$d/ writable"; \
+		else echo "✘ $$d/ missing or root-owned: make -f Makefile.arch dirs (sudo rm -rf $$d first if root-owned)"; ok=0; fi; \
+	done; \
+	if [ -d data/landing ] && [ "$$(stat -c %a data/landing)" != 700 ]; then echo "✔ data/landing readable by containers"; \
+	elif [ -d data/landing ]; then echo "✘ data/landing is 700: chmod 755 data/landing"; ok=0; fi; \
+	if [ -f .env ]; then \
+		if grep -q '^AIRFLOW_UID=50000' .env; then echo "✔ AIRFLOW_UID=50000"; \
+		else echo "✘ AIRFLOW_UID must be 50000 in .env (own UID breaks airflow-init)"; ok=0; fi; \
+		empty=$$(grep -cE '^R2_[A-Z_]+=$$' .env); \
+		if [ "$$empty" = 0 ]; then echo "✔ R2_* values filled"; else echo "✘ $$empty R2_* values empty in .env"; ok=0; fi; \
+	else echo "✘ .env missing: make -f Makefile.arch setup"; ok=0; fi; \
+	if [ $$ok = 1 ]; then echo -e "\033[32m✔ all checks passed\033[0m"; else exit 1; fi

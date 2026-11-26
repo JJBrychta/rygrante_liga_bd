@@ -4,7 +4,7 @@
 # Run `make` (or `make help`) to list targets.
 # The CI targets mirror .github/workflows/ci.yml so you can reproduce CI locally
 # before pushing. Security scanners run in Docker, so nothing extra to install.
-# Requires: uv, Docker Desktop, GNU make (macOS/Linux; on Windows use Git Bash/WSL).
+# Requires: uv, Docker, GNU make. Arch: use Makefile.arch. Windows: use make.ps1.
 # ==============================================================================
 
 .DEFAULT_GOAL := help
