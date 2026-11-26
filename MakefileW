@@ -4,8 +4,9 @@
 # Usage:  make -f MakefileW <target>      (e.g. make -f MakefileW ci-fast)
 #         make -f MakefileW logs s=airflow-webserver
 #
-# Same targets as Makefile / MakefileL. Every target runs make.ps1, so all the
-# logic lives in PowerShell (no bash, awk or Git Bash needed).
+# Same CI + Docker targets as Makefile (keep them in sync), plus Windows setup.
+# Every target runs make.ps1, so all the logic lives in PowerShell (no bash,
+# awk or Git Bash needed).
 #
 # Needs GNU make on Windows, once:  winget install ezwinports.make
 # No make? Run the script directly:  .\make.ps1 <target>
@@ -16,10 +17,71 @@
 # Override for testing, e.g. PS="pwsh -NoProfile -File make.ps1"
 PS ?= powershell -NoProfile -ExecutionPolicy Bypass -File make.ps1
 
-TARGETS := help ci ci-fast lint fix test test-host gitleaks semgrep trivy \
-           up build down restart ps logs setup data first-run doctor
+.PHONY: help ci ci-fast lint fix test test-host gitleaks semgrep trivy \
+        up build down restart ps logs setup data first-run doctor
 
-.PHONY: $(TARGETS)
+help: ## Show this help
+	@$(PS) help
 
-$(TARGETS):
-	@$(PS) $@ $(if $(s),-Service $(s))
+##@ CI (mirrors .github/workflows/ci.yml)
+
+ci: ## Run the full CI pipeline locally (all 5 jobs)
+	@$(PS) ci
+
+ci-fast: ## Run only lint + tests (quick pre-push check)
+	@$(PS) ci-fast
+
+lint: ## Job lint-and-uv: uv lock, Ruff lint/format, script + Compose syntax
+	@$(PS) lint
+
+fix: ## Auto-fix Ruff lint issues and reformat code
+	@$(PS) fix
+
+test: ## Job unit-tests: pytest inside the Spark container (no local Java needed)
+	@$(PS) test
+
+test-host: ## Job unit-tests exactly like CI (needs Java 17 on your machine)
+	@$(PS) test-host
+
+gitleaks: ## Job gitleaks: scan committed Git history for secrets
+	@$(PS) gitleaks
+
+semgrep: ## Job semgrep: static security analysis (Python, Docker, Compose, secrets)
+	@$(PS) semgrep
+
+trivy: ## Job trivy: CRITICAL/HIGH vulnerability, secret and IaC scans
+	@$(PS) trivy
+
+##@ Docker stack
+
+up: ## Start the stack (Spark, Airflow, Streamlit) in the background
+	@$(PS) up
+
+build: ## Rebuild images and start the stack
+	@$(PS) build
+
+down: ## Stop the stack (keeps data and volumes)
+	@$(PS) down
+
+restart: ## Restart the stack
+	@$(PS) restart
+
+ps: ## Show container status
+	@$(PS) ps
+
+logs: ## Follow logs (all services, or one: make -f MakefileW logs s=airflow-webserver)
+	@$(PS) logs $(if $(s),-Service $(s))
+
+##@ Windows setup
+
+setup: ## Create .env (never overwrites), install Python 3.11 + deps
+	@$(PS) setup
+
+data: ## Download + verify the dataset into data\landing
+	@$(PS) data
+
+first-run: ## Fresh clone to working stack: setup, data, build, test
+	@$(PS) first-run
+
+doctor: ## Diagnose common Windows problems (Docker, WSL, uv, .env, line endings)
+	@$(PS) doctor
