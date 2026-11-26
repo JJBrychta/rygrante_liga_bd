@@ -26,7 +26,7 @@ TRIVY_SKIP_FILES := .env
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "; printf "\nUsage: make \033[36m<target>\033[0m\n"} \
 		/^##@/ {printf "\n\033[1m%s\033[0m\n", substr($$0, 5)} \
-		/^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+		/^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 ##@ CI (mirrors .github/workflows/ci.yml)
 
@@ -91,3 +91,35 @@ ps: ## Show container status
 
 logs: ## Follow logs (all services, or one: make logs s=airflow-webserver)
 	$(COMPOSE) logs -f --tail 100 $(s)
+
+##@ Bronze ingestion (stack must be up: make up)
+# One day:   make ingest DATE=2026-01-05
+# A range:   make ingest-finance FROM=2026-01-01 TO=2026-01-14
+# No dates:  days 1-14 (the SANITY_CHECKS slice). Full 200 days: FROM=2026-01-01 TO=2026-07-19
+
+DATE ?=
+FROM ?= $(or $(DATE),2026-01-01)
+TO   ?= $(or $(DATE),2026-01-14)
+INGEST := $(COMPOSE) exec -T spark-master /opt/spark/bin/spark-submit \
+	--master spark://spark-master:7077 /opt/workspace/spark_jobs/bronze/ingest_all.py \
+	--from $(FROM) --to $(TO)
+
+.PHONY: ingest ingest-clients ingest-reference ingest-hr ingest-finance ingest-crm-surveys
+
+ingest: ## Run ALL Bronze ingests in one Spark session (DATE= or FROM= TO=)
+	$(INGEST) --jobs all
+
+ingest-clients: ## Bronze clients (full load)
+	$(INGEST) --jobs clients
+
+ingest-reference: ## Bronze projects + survey_questions (full load)
+	$(INGEST) --jobs reference
+
+ingest-hr: ## Bronze employees + timesheets (daily)
+	$(INGEST) --jobs hr
+
+ingest-finance: ## Bronze fx_rates + invoices + expenses (daily)
+	$(INGEST) --jobs finance
+
+ingest-crm-surveys: ## Bronze crm_events + employee_surveys (daily)
+	$(INGEST) --jobs crm-surveys
