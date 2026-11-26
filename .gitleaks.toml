@@ -1,0 +1,14 @@
+title = "spark-lakehouse-starter gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow documented template defaults, offline test dummies, and ignored runtime dirs"
+paths = [
+    '''^\.env\.example$''',
+    '''^tests/test_download_data\.py$''',
+    '''^data/''',
+    '''^lakehouse/''',
+    '''^logs/''',
+]

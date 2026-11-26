@@ -1,0 +1,202 @@
+x-spark-volumes: &spark-volumes
+  - ./pyproject.toml:/opt/workspace/pyproject.toml:ro
+  - ./spark_jobs:/opt/workspace/spark_jobs
+  - ./dq:/opt/workspace/dq
+  - ./data:/opt/workspace/data
+  - ./lakehouse:/opt/workspace/lakehouse
+  - ./tests:/opt/workspace/tests
+  - ./scripts:/opt/workspace/scripts
+
+x-spark-env: &spark-env
+  SPARK_MASTER_URL: ${SPARK_MASTER_URL:-spark://spark-master:7077}
+  SPARK_SHUFFLE_PARTITIONS: ${SPARK_SHUFFLE_PARTITIONS:-8}
+  LANDING_ROOT: /opt/workspace/data/landing
+  LAKEHOUSE_ROOT: /opt/workspace/lakehouse
+  SPARK_EVENT_LOG_DIR: /opt/workspace/lakehouse/spark-events
+  S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
+  R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+  R2_BUCKET_NAME: ${R2_BUCKET_NAME:-}
+  R2_PREFIX: ${R2_PREFIX:-course-2026}
+  R2_STUDENT_ACCESS_KEY_ID: ${R2_STUDENT_ACCESS_KEY_ID:-}
+  R2_STUDENT_SECRET_ACCESS_KEY: ${R2_STUDENT_SECRET_ACCESS_KEY:-}
+  PYTHONPATH: /opt/workspace
+
+x-airflow-common: &airflow-common
+  image: spark-lakehouse-airflow:2.10.5
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    <<: *spark-env
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./spark_jobs:/opt/workspace/spark_jobs
+    - ./dq:/opt/workspace/dq
+    - ./data:/opt/workspace/data
+    - ./lakehouse:/opt/workspace/lakehouse
+    - ./tests:/opt/workspace/tests
+    - ./scripts:/opt/workspace/scripts
+  user: "${AIRFLOW_UID:-50000}:0"
+  networks:
+    - lakehouse-net
+
+services:
+  postgres:
+    image: postgres:15-bookworm
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - lakehouse-net
+    restart: unless-stopped
+
+  spark-master:
+    build:
+      context: ./docker/spark
+    image: spark-lakehouse-spark:3.5.5
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+      --host spark-master --port 7077 --webui-port 8080
+    ports:
+      - "7077:7077"
+      - "8081:8080"
+    environment:
+      <<: *spark-env
+    volumes: *spark-volumes
+    networks:
+      - lakehouse-net
+    restart: unless-stopped
+
+  spark-worker:
+    image: spark-lakehouse-spark:3.5.5
+    depends_on:
+      - spark-master
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker
+      spark://spark-master:7077
+      --webui-port 8081
+      --cores ${SPARK_WORKER_CORES:-2}
+      --memory ${SPARK_WORKER_MEMORY:-2G}
+    ports:
+      - "8082:8081"
+    environment:
+      <<: *spark-env
+    volumes: *spark-volumes
+    networks:
+      - lakehouse-net
+    restart: unless-stopped
+
+  spark-history:
+    image: spark-lakehouse-spark:3.5.5
+    command:
+      - bash
+      - -c
+      - mkdir -p /opt/workspace/lakehouse/spark-events && exec /opt/spark/bin/spark-class org.apache.spark.deploy.history.HistoryServer
+    ports:
+      - "18080:18080"
+    environment:
+      SPARK_HISTORY_OPTS: "-Dspark.history.fs.logDirectory=file:///opt/workspace/lakehouse/spark-events -Dspark.history.ui.port=18080"
+    volumes: *spark-volumes
+    networks:
+      - lakehouse-net
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    build:
+      context: ./docker/airflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        airflow db migrate
+        airflow users create \
+          --username "${AIRFLOW_ADMIN_USER:-admin}" \
+          --password "${AIRFLOW_ADMIN_PASSWORD:-admin}" \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com || true
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    command: scheduler
+    restart: unless-stopped
+
+  reporting:
+    build:
+      context: ./docker/reporting
+    image: spark-lakehouse-reporting:0.1.0
+    ports:
+      - "8501:8501"
+    environment:
+      LAKEHOUSE_ROOT: /opt/workspace/lakehouse
+      PYTHONPATH: /opt/workspace
+    volumes:
+      - ./reporting:/opt/workspace/reporting
+      - ./lakehouse:/opt/workspace/lakehouse:ro
+    networks:
+      - lakehouse-net
+    restart: unless-stopped
+
+  minio:
+    profiles: ["minio"]
+    image: minio/minio:RELEASE.2025-02-28T09-55-16Z
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio-data:/data
+    networks:
+      - lakehouse-net
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  minio-data:
+
+networks:
+  lakehouse-net:
+    driver: bridge

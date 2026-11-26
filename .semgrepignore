@@ -1,0 +1,8 @@
+.git/
+data/
+lakehouse/
+logs/
+.venv/
+.pytest_cache/
+__pycache__/
+HANDOFF_PROMPT.md

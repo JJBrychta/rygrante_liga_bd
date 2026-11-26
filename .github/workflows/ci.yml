@@ -1,0 +1,148 @@
+name: CI & Security
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-uv:
+    name: uv Checks & Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Verify uv.lock is up to date
+        run: uv lock --check
+
+      - name: Install dependencies (frozen)
+        run: uv sync --frozen --dev
+
+      - name: Run Ruff lint checks
+        run: uv run ruff check .
+
+      - name: Run Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Validate download shell script syntax
+        run: bash -n scripts/download_data.sh
+
+      - name: Validate Docker Compose configuration
+        run: docker compose config --quiet
+
+  unit-tests:
+    name: PySpark & Downloader Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Cache Spark / Delta Maven JARs
+        uses: actions/cache@v4
+        with:
+          path: ~/.ivy2
+          key: ${{ runner.os }}-ivy2-${{ hashFiles('pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-ivy2-
+
+      - name: Install dependencies (frozen)
+        run: uv sync --frozen --dev
+
+      - name: Run pytest suite
+        run: uv run pytest -v
+
+  gitleaks:
+    name: Gitleaks Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Gitleaks OSS binary
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          chmod +x /tmp/gitleaks
+          sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
+          rm -f /tmp/gitleaks.tar.gz
+          gitleaks version
+
+      - name: Scan Git history for secrets
+        run: gitleaks git --verbose --redact --config .gitleaks.toml .
+
+  semgrep:
+    name: Semgrep OSS SAST
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep OSS scan
+        run: |
+          semgrep scan \
+            --config p/python \
+            --config p/dockerfile \
+            --config p/docker-compose \
+            --config p/secrets \
+            --error \
+            --metrics=off
+
+  trivy:
+    name: Trivy Vulnerability & IaC Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem vulnerability & secret scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Run Trivy Dockerfile & Compose misconfiguration scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
