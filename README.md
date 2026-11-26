@@ -60,23 +60,71 @@ spark-lakehouse-starter/
 
 ## Quickstart
 
+Commands are given for **macOS**, **Windows (PowerShell)**, and **Linux (Arch / Debian / Ubuntu)**. Where only one block is shown, it works the same on every OS. Run everything from the repository root.
+
 ### 1. Prerequisites
-- **Docker Desktop** with **Docker Compose v2** (`docker compose`)
-- *(Optional)* [`uv`](https://docs.astral.sh/uv/) for local linting/formatting without containers
+
+You need **Git**, **Docker with Compose v2** (`docker compose`, not `docker-compose`), and **`uv`**. Give Docker at least **8 GB RAM** and keep **~20 GB** free disk.
+
+**macOS** (Homebrew):
+```bash
+brew install git uv
+brew install --cask docker   # then open Docker Desktop once; set Memory >= 8 GB in Settings > Resources
+```
+
+**Windows** (PowerShell; run `wsl --install` as Administrator first and reboot if asked):
+```powershell
+winget install --id Git.Git -e --source winget
+winget install --id Docker.DockerDesktop -e --source winget
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+Start Docker Desktop (WSL 2 backend). On the WSL 2 backend, RAM is set in `%UserProfile%\.wslconfig` (`[wsl2]` then `memory=8GB`), not in Docker Desktop settings.
+
+**Arch Linux:**
+```bash
+sudo pacman -Syu --needed git docker docker-compose docker-buildx uv
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER"   # log out and back in, so docker works without sudo
+```
+*(If `pacman` fails with `404` while downloading, your package database is stale: the `-Syu` above refreshes it. Reboot after a kernel upgrade, otherwise containers fail with `veth ... operation not supported`.)*
+
+**Debian / Ubuntu:** install Docker Engine + the Compose plugin from [docs.docker.com/engine/install](https://docs.docker.com/engine/install/), then:
+```bash
+sudo apt-get install -y git
+curl -LsSf https://astral.sh/uv/install.sh | sh
+sudo usermod -aG docker "$USER"   # log out and back in
+```
+
+Then, on every OS, open a new terminal and verify:
+```bash
+git --version
+docker --version
+docker compose version
+uv --version
+uv python install 3.11
+```
+*(On Linux, Docker Engine runs as a system service, so there is no Docker Desktop window to open. `systemctl is-active docker` should print `active`.)*
 
 > **Windows Note:** Running Spark and `pytest` inside the provided Docker containers avoids local Hadoop `winutils.exe` and JVM version issues.
 
-### 2. Configure & Start the Local Stack
+### 2. Configure `.env`
+
+Create `.env` from the template. These commands never overwrite an existing `.env`, so your credentials are safe if you run them again.
+
+**macOS / Linux:**
 ```bash
-cp .env.example .env
-docker compose up -d --build
+cp -n .env.example .env
 ```
-*(To also start a local S3-compatible MinIO server, run `docker compose --profile minio up -d --build`.)*
+
+**Windows (PowerShell):**
+```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+```
+
+Fill in the `R2_*` variables provided by your instructor. Never commit `.env`: it is in `.gitignore`, and CI runs Gitleaks.
 
 ### 3. Download & Verify the Landing Dataset
 The course dataset contains **200 development days** (`2026-01-01` – `2026-07-19`) distributed via **Cloudflare R2** using a SHA-256 manifest (`MANIFEST.sha256`) under `R2_PREFIX=course-2026`. *(An additional **70-day holdout**, `2026-07-20` – `2026-09-27`, is reserved for final grading and out-of-time evaluation.)*
-
-Fill in the `R2_*` variables provided by your instructor in `.env`, then run:
 
 **macOS / Linux / Git Bash:**
 ```bash
@@ -90,23 +138,65 @@ Fill in the `R2_*` variables provided by your instructor in `.env`, then run:
 
 *(Both wrappers invoke `scripts/download_data.py`, which reads `MANIFEST.sha256` from Cloudflare R2, downloads and SHA-256-verifies the listed archive before extracting it into `./data/landing`, and checks all 10 required dataset folders. Pass `--verify-only` / `-VerifyOnly` to re-verify locally without downloading, or `--url` / `-Url` for a direct HTTP mirror.)*
 
-### 4. Run the Reference `clients` Mini-Pipeline
-```bash
-docker compose exec spark-master spark-submit \
-  --master spark://spark-master:7077 \
-  /opt/workspace/spark_jobs/bronze/ingest_clients.py \
-  --batch-date 2026-01-01
+> **`NoSuchKey` error?** If the log shows `Using manifest .../course-2026/archives/MANIFEST.sha256` and then fails with `NoSuchKey`, the archive lives under `archives/`. Set `R2_PREFIX=course-2026/archives` in `.env` and run the download again (or pass `--r2-prefix course-2026/archives` / `-R2Prefix course-2026/archives` once).
 
-docker compose exec spark-master spark-submit \
-  --master spark://spark-master:7077 \
-  /opt/workspace/spark_jobs/silver/transform_clients.py \
-  --batch-date 2026-01-01
+If PowerShell refuses to run the script (`running scripts is disabled on this system`), allow local scripts for your user once:
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
-### 5. Run Unit Tests
+### 4. Start the Local Stack
+
+**Linux only (first run):** the containers run as different users than you (Spark as UID `185`, Airflow as UID `50000`). Create the bind-mounted folders yourself and make them writable, otherwise Docker creates them as `root` and Spark History / Airflow crash with `Permission denied`:
+```bash
+mkdir -p data/landing lakehouse/spark-events logs
+chmod 777 data lakehouse logs dags
+chmod 755 data/landing
+```
+Keep `AIRFLOW_UID=50000` in `.env`. Setting it to your own UID (`id -u`) breaks `airflow-init` with `The user that Airflow is running as has no username`.
+
+*(macOS and Windows: Docker Desktop handles file ownership, so skip this step.)*
+
+**Every OS:**
+```bash
+docker compose up -d --build
+docker compose ps
+```
+The first build takes several minutes. All services should be `Up`; `airflow-init` should show `Exited (0)`.
+*(To also start a local S3-compatible MinIO server, run `docker compose --profile minio up -d --build`.)*
+
+### 5. Run the Reference `clients` Mini-Pipeline
+These are single-line commands, so they work unchanged in bash, zsh, and PowerShell:
+```bash
+docker compose exec spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /opt/workspace/spark_jobs/bronze/ingest_clients.py --batch-date 2026-01-01
+docker compose exec spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /opt/workspace/spark_jobs/silver/transform_clients.py --batch-date 2026-01-01
+```
+*(If the Bronze job fails with `PATH_NOT_FOUND ... /opt/workspace/data/landing/clients/clients.csv` on Linux, run `chmod 755 data/landing`: the downloader can create it readable by you only.)*
+
+### 6. Run Unit Tests
 ```bash
 docker compose run --rm spark-master pytest -v
 ```
+
+### 7. Stop the Stack
+```bash
+docker compose down
+```
+*(This keeps your built images and the Airflow database. `docker compose down -v` also deletes the database volume.)*
+
+### Troubleshooting by OS
+
+| Symptom | OS | Fix |
+| :--- | :--- | :--- |
+| `permission denied ... /var/run/docker.sock` | Linux | `sudo usermod -aG docker "$USER"`, then log out and back in |
+| `Cannot connect to the Docker daemon` | macOS / Windows | Start Docker Desktop and wait until it says *running* |
+| `Cannot connect to the Docker daemon` | Linux | `sudo systemctl start docker` |
+| `compose build requires buildx` | Linux | Arch: `sudo pacman -S docker-buildx` · Debian/Ubuntu: `sudo apt-get install docker-buildx-plugin` |
+| `veth ... operation not supported` | Linux | Kernel was upgraded but not rebooted: reboot |
+| `Permission denied` in `spark-history` / `airflow-*` logs | Linux | Run the step 4 folder commands, then `docker compose up -d` |
+| `$'\r': command not found` when running `.sh` scripts | Windows | Line endings were converted to CRLF: `git config --global core.autocrlf input`, then re-clone |
+| `running scripts is disabled on this system` | Windows | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
+| Containers get killed / Spark `OutOfMemory` | All | Give Docker more RAM (macOS: Docker Desktop settings · Windows: `.wslconfig`) and close other heavy apps |
 
 ---
 
