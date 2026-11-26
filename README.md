@@ -92,12 +92,12 @@ Fill in the `R2_*` variables provided by your instructor in `.env`, then run:
 
 ### 4. Run the Reference `clients` Mini-Pipeline
 ```bash
-docker compose exec spark-master spark-submit \
+docker compose exec spark-master /opt/spark/bin/spark-submit \
   --master spark://spark-master:7077 \
   /opt/workspace/spark_jobs/bronze/ingest_clients.py \
   --batch-date 2026-01-01
 
-docker compose exec spark-master spark-submit \
+docker compose exec spark-master /opt/spark/bin/spark-submit \
   --master spark://spark-master:7077 \
   /opt/workspace/spark_jobs/silver/transform_clients.py \
   --batch-date 2026-01-01

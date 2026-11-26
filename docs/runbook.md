@@ -72,13 +72,13 @@ Execute PySpark jobs inside the `spark-master` container against the local Spark
 
 ```bash
 # Reference Bronze job (clients)
-docker compose exec spark-master spark-submit \
+docker compose exec spark-master /opt/spark/bin/spark-submit \
   --master spark://spark-master:7077 \
   /opt/workspace/spark_jobs/bronze/ingest_clients.py \
   --batch-date 2026-01-01
 
 # Reference Silver job (clients + quarantine + sample DQ audit)
-docker compose exec spark-master spark-submit \
+docker compose exec spark-master /opt/spark/bin/spark-submit \
   --master spark://spark-master:7077 \
   /opt/workspace/spark_jobs/silver/transform_clients.py \
   --batch-date 2026-01-01
