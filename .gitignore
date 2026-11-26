@@ -191,7 +191,8 @@ cython_debug/
 #   be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
 #   and can be added to the global gitignore or merged into this file.  For a more nuclear
 #   option (not recommended) you can uncomment the following to ignore the entire idea folder.
-# .idea/
+.idea/
+*.iml
 
 # Abstra
 #   Abstra is an AI-powered process automation framework.
@@ -204,7 +205,7 @@ cython_debug/
 #   can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
 #   and can be added to the global gitignore or merged into this file. However, if you prefer, you
 #   could uncomment the following to ignore the entire vscode folder
-# .vscode/
+.vscode/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
@@ -235,4 +236,91 @@ logs/
 .venv/
 __pycache__/
 HANDOFF_PROMPT.md
+
+# ==============================================================================
+# Team additions
+# ==============================================================================
+
+# --- Secrets & credentials (never commit) ---
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+credentials*.json
+service-account*.json
+secrets*.json
+scrts*
+*.secret
+.aws/
+.netrc
+
+# --- Data & large files (download with scripts/download_data.*) ---
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.7z
+*.avro
+*.orc
+*.duckdb
+*.duckdb.wal
+*.db
+minio-data/
+_delta_log/
+spark-events/
+checkpoints/
+tmp/
+
+# --- Airflow local state ---
+airflow.db
+airflow.cfg
+unittests.cfg
+webserver_config.py
+standalone_admin_password.txt
+
+# --- Docker local overrides ---
+docker-compose.override.yml
+compose.override.yml
+
+# --- AI coding agents (personal/local settings) ---
+.claude/settings.local.json
+.claude/worktrees/
+CLAUDE.local.md
+.cursor/
+.aider*
+.codex/
+.antigravity/
+
+# --- Editors ---
+*.swp
+*.swo
+*~
+*.sublime-workspace
+.fleet/
+.zed/
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# --- Windows ---
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# --- Linux ---
+.directory
+.Trash-*
+.nfs*
 
