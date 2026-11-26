@@ -17,9 +17,43 @@ from __future__ import annotations
 
 import argparse
 
-from pyspark.sql import SparkSession
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.types import IntegerType, StringType, StructField, StructType
 
-from spark_jobs.common.spark_session import get_spark_session
+from spark_jobs.common.spark_session import (
+    get_lakehouse_root,
+    get_landing_root,
+    get_spark_session,
+    join_path,
+)
+
+PROJECTS_RAW_SCHEMA = StructType(
+    [
+        StructField("project_id", StringType(), nullable=True),
+        StructField("client_id", StringType(), nullable=True),
+        StructField("budget_eur", StringType(), nullable=True),  # raw; cast to double in Silver
+        StructField("status", StringType(), nullable=True),
+    ]
+)
+
+SURVEY_QUESTIONS_RAW_SCHEMA = StructType(
+    [
+        StructField("question_id", StringType(), nullable=True),
+        StructField("dimension", StringType(), nullable=True),
+        StructField("scale_min", IntegerType(), nullable=True),
+        StructField("scale_max", IntegerType(), nullable=True),
+        StructField("prompt_text", StringType(), nullable=True),
+    ]
+)
+
+
+def _add_bronze_metadata(df: DataFrame, batch_date: str) -> DataFrame:
+    return (
+        df.withColumn("_batch_date", F.to_date(F.lit(batch_date)))
+        .withColumn("_ingested_at", F.current_timestamp())
+        .withColumn("_source_file", F.input_file_name())
+    )
 
 
 def run(
@@ -27,11 +61,37 @@ def run(
     batch_date: str,
     landing_root: str | None = None,
     lakehouse_root: str | None = None,
-) -> None:
-    """TODO: Implement Bronze ingestion for `projects` and `survey_questions`."""
-    raise NotImplementedError(
-        "TODO: Implement Bronze ingestion for projects & survey_questions (see ingest_clients.py)."
+) -> tuple[DataFrame, DataFrame]:
+    """Ingest `projects` and `survey_questions` into Bronze Delta (full load)."""
+    resolved_landing = get_landing_root(landing_root)
+    resolved_lakehouse = get_lakehouse_root(lakehouse_root)
+
+    projects_path = join_path(resolved_landing, "projects", "projects.csv")
+    questions_path = join_path(resolved_landing, "survey_questions", "survey_questions.json")
+
+    projects_raw = (
+        spark.read.option("header", "true").schema(PROJECTS_RAW_SCHEMA).csv(projects_path)
     )
+
+    questions_raw = (
+        spark.read.option("multiLine", "true")
+        .schema(SURVEY_QUESTIONS_RAW_SCHEMA)
+        .json(questions_path)
+    )
+
+    projects_bronze = _add_bronze_metadata(projects_raw, batch_date)
+    questions_bronze = _add_bronze_metadata(questions_raw, batch_date)
+
+    projects_target = join_path(resolved_lakehouse, "bronze", "projects")
+    questions_target = join_path(resolved_lakehouse, "bronze", "survey_questions")
+
+    for df, target in (
+        (projects_bronze, projects_target),
+        (questions_bronze, questions_target),
+    ):
+        (df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(target))
+
+    return projects_bronze, questions_bronze
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,6 +106,13 @@ if __name__ == "__main__":
     args = parse_args()
     spark = get_spark_session("bronze-ingest-reference")
     try:
-        run(spark, args.batch_date, args.landing_root, args.lakehouse_root)
+        projects_df, questions_df = run(
+            spark, args.batch_date, args.landing_root, args.lakehouse_root
+        )
+        print(
+            f"Ingested {projects_df.count()} rows into bronze/projects and "
+            f"{questions_df.count()} rows into bronze/survey_questions "
+            f"for batch_date={args.batch_date}"
+        )
     finally:
         spark.stop()
