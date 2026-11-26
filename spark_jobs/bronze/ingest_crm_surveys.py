@@ -21,14 +21,16 @@ import os
 from pyspark.sql import Column, DataFrame, SparkSession
 from pyspark.sql import functions as F
 
-from spark_jobs.common.spark_session import get_spark_session
-
 from spark_jobs.common.spark_session import (
     get_lakehouse_root,
     get_landing_root,
     get_spark_session,
     join_path,
 )
+
+
+def _field(name: str, alias: str | None = None) -> Column:
+    return F.get_json_object(F.col("value"), f"$.{name}").alias(alias or name)
 
 
 def run(
