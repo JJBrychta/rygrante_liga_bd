@@ -219,6 +219,22 @@ uv run --no-project --with ruff ruff check .
 uv run --no-project --with ruff ruff format --check .
 ```
 
+### Run CI locally with `make`
+
+The [`Makefile`](./Makefile) mirrors every CI job, so you can reproduce a red pipeline on your laptop before pushing. Security scanners run in Docker, so nothing extra needs installing (Windows: use Git Bash or WSL).
+
+| Command | What it runs |
+| :--- | :--- |
+| `make` | List all targets |
+| `make ci-fast` | Lint + tests — **run before every push** |
+| `make ci` | All 5 CI jobs (lint, tests, Gitleaks, Semgrep, Trivy) |
+| `make lint` / `make fix` | Check / auto-fix Ruff lint and formatting |
+| `make test` | `pytest` inside the `spark-master` container |
+| `make gitleaks` / `make semgrep` / `make trivy` | Individual security scans |
+| `make up` / `make down` / `make ps` / `make logs s=<service>` | Manage the Docker stack |
+
+`make trivy` skips `.env`, `data/`, `lakehouse/` and `logs/`, because CI never sees those local-only files.
+
 ---
 
 ## Local Service URLs
