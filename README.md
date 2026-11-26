@@ -242,12 +242,12 @@ All three runners have the same CI and Docker targets. Use the one for your OS:
 | OS | Runner | Example |
 | :--- | :--- | :--- |
 | macOS | [`Makefile`](./Makefile) | `make ci-fast` |
-| Arch Linux | [`Makefile.arch`](./Makefile.arch) (includes `Makefile`) | `make -f Makefile.arch ci-fast` |
-| Windows | [`make.ps1`](./make.ps1) (PowerShell, no `make` needed) | `.\make.ps1 ci-fast` |
+| Linux (Arch) | [`MakefileL`](./MakefileL) (includes `Makefile`) | `make -f MakefileL ci-fast` |
+| Windows | [`MakefileW`](./MakefileW) (runs [`make.ps1`](./make.ps1)) | `make -f MakefileW ci-fast` |
 
 Extra setup targets for a fresh clone:
 
-| Target | Arch (`make -f Makefile.arch …`) | Windows (`.\make.ps1 …`) |
+| Target | Linux (`make -f MakefileL …`) | Windows (`make -f MakefileW …`) |
 | :--- | :--- | :--- |
 | `install` | `pacman` packages, enable Docker, join `docker` group (sudo) | not available: use `winget` (see Quickstart) |
 | `setup` | Creates `.env` (never overwrites), fixes folder permissions, `uv sync` | Creates `.env` (never overwrites), `uv sync` |
@@ -257,7 +257,7 @@ Extra setup targets for a fresh clone:
 | `doctor` | Checks kernel/reboot, Docker service, `docker` group, buildx, folders, `.env` | Checks Docker Desktop, WSL, uv, git `autocrlf`, `.env`, dataset |
 | `java` | Installs Java 17 for `test-host` | not available |
 
-On Arch, set `alias amake='make -f Makefile.arch'` once, then use `amake doctor`. On Windows, use `.\make.ps1 logs -Service airflow-webserver` instead of `make logs s=…`. If PowerShell blocks the script, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
+On Linux, set `alias lmake='make -f MakefileL'` once, then use `lmake doctor`. On Windows, install GNU make once with `winget install ezwinports.make`, then open a new terminal. Without make, run the same targets directly with `.\make.ps1 <target>`, using `-Service <name>` instead of `s=<name>` for `logs`. If PowerShell blocks the script, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
 
 ---
 

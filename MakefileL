@@ -1,14 +1,14 @@
 # ==============================================================================
-# rygrante_liga_bd — Arch Linux shortcuts
+# rygrante_liga_bd — Linux (Arch) shortcuts
 #
-# Usage:  make -f Makefile.arch <target>      (e.g. make -f Makefile.arch setup)
+# Usage:  make -f MakefileL <target>      (e.g. make -f MakefileL setup)
 #
 # Includes every target from the shared Makefile (ci, lint, test, up, down, ...)
 # and adds Arch-specific setup. Docker Engine on Linux runs containers as other
 # users (Spark = UID 185, Airflow = UID 50000), so bind-mounted folders must be
 # created and made writable before the first `docker compose up`.
 #
-# Tip: alias it once in your shell:  alias amake='make -f Makefile.arch'
+# Tip: alias it once in your shell:  alias lmake='make -f MakefileL'
 # ==============================================================================
 
 include Makefile
@@ -56,7 +56,7 @@ doctor: ## Diagnose common Arch problems (service, group, buildx, kernel, folder
 	if systemctl is-active --quiet docker; then echo "✔ docker service active"; \
 	else echo "✘ docker not running: sudo systemctl start docker"; ok=0; fi; \
 	if id -nG | grep -qw docker; then echo "✔ user in docker group"; \
-	else echo "✘ not in docker group: make -f Makefile.arch install, then log out/in"; ok=0; fi; \
+	else echo "✘ not in docker group: make -f MakefileL install, then log out/in"; ok=0; fi; \
 	if docker buildx version >/dev/null 2>&1; then echo "✔ docker buildx installed"; \
 	else echo "✘ buildx missing: sudo pacman -S docker-buildx"; ok=0; fi; \
 	if docker compose version >/dev/null 2>&1; then echo "✔ docker compose v2"; \
@@ -65,7 +65,7 @@ doctor: ## Diagnose common Arch problems (service, group, buildx, kernel, folder
 	else echo "✘ uv missing: sudo pacman -S uv"; ok=0; fi; \
 	for d in data lakehouse logs; do \
 		if [ -d "$$d" ] && [ "$$(stat -c %U "$$d")" != root ] && [ -w "$$d" ]; then echo "✔ $$d/ writable"; \
-		else echo "✘ $$d/ missing or root-owned: make -f Makefile.arch dirs (sudo rm -rf $$d first if root-owned)"; ok=0; fi; \
+		else echo "✘ $$d/ missing or root-owned: make -f MakefileL dirs (sudo rm -rf $$d first if root-owned)"; ok=0; fi; \
 	done; \
 	if [ -d data/landing ] && [ "$$(stat -c %a data/landing)" != 700 ]; then echo "✔ data/landing readable by containers"; \
 	elif [ -d data/landing ]; then echo "✘ data/landing is 700: chmod 755 data/landing"; ok=0; fi; \
@@ -74,5 +74,5 @@ doctor: ## Diagnose common Arch problems (service, group, buildx, kernel, folder
 		else echo "✘ AIRFLOW_UID must be 50000 in .env (own UID breaks airflow-init)"; ok=0; fi; \
 		empty=$$(grep -cE '^R2_[A-Z_]+=$$' .env); \
 		if [ "$$empty" = 0 ]; then echo "✔ R2_* values filled"; else echo "✘ $$empty R2_* values empty in .env"; ok=0; fi; \
-	else echo "✘ .env missing: make -f Makefile.arch setup"; ok=0; fi; \
+	else echo "✘ .env missing: make -f MakefileL setup"; ok=0; fi; \
 	if [ $$ok = 1 ]; then echo -e "\033[32m✔ all checks passed\033[0m"; else exit 1; fi
