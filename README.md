@@ -235,6 +235,30 @@ The [`Makefile`](./Makefile) mirrors every CI job, so you can reproduce a red pi
 
 `make trivy` skips `.env`, `data/`, `lakehouse/` and `logs/`, because CI never sees those local-only files.
 
+#### Per-OS runners
+
+All three runners have the same CI and Docker targets. Use the one for your OS:
+
+| OS | Runner | Example |
+| :--- | :--- | :--- |
+| macOS | [`Makefile`](./Makefile) | `make ci-fast` |
+| Arch Linux | [`Makefile.arch`](./Makefile.arch) (includes `Makefile`) | `make -f Makefile.arch ci-fast` |
+| Windows | [`make.ps1`](./make.ps1) (PowerShell, no `make` needed) | `.\make.ps1 ci-fast` |
+
+Extra setup targets for a fresh clone:
+
+| Target | Arch (`make -f Makefile.arch …`) | Windows (`.\make.ps1 …`) |
+| :--- | :--- | :--- |
+| `install` | `pacman` packages, enable Docker, join `docker` group (sudo) | not available: use `winget` (see Quickstart) |
+| `setup` | Creates `.env` (never overwrites), fixes folder permissions, `uv sync` | Creates `.env` (never overwrites), `uv sync` |
+| `dirs` | Creates writable `data/`, `lakehouse/`, `logs/` for the containers | not needed (Docker Desktop) |
+| `data` | Downloads + verifies the dataset, `chmod 755 data/landing` | Downloads + verifies the dataset |
+| `first-run` | `setup` + `data` + `build` + `test` | `setup` + `data` + `build` + `test` |
+| `doctor` | Checks kernel/reboot, Docker service, `docker` group, buildx, folders, `.env` | Checks Docker Desktop, WSL, uv, git `autocrlf`, `.env`, dataset |
+| `java` | Installs Java 17 for `test-host` | not available |
+
+On Arch, set `alias amake='make -f Makefile.arch'` once, then use `amake doctor`. On Windows, use `.\make.ps1 logs -Service airflow-webserver` instead of `make logs s=…`. If PowerShell blocks the script, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
+
 ---
 
 ## Local Service URLs
